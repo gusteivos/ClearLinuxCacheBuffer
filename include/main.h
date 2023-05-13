@@ -1,16 +1,17 @@
 #include <stdbool.h>
-#include <cahe_buffer.h>
+#include <getopt.h>
+#include <syslog.h>
+#include <program_information.h>
+#include <cache_buffer.h>
 #include <ctl_listener.h>
 
-#define LINUX_DIRTY_EXPIRE_CENTISECS    "/proc/sys/vm/dirty_expire_centisecs"
+#define DIRTY_EXPIRE_CENTISECS_PATH "/proc/sys/vm/dirty_expire_centisecs"
 
 #define DEFAULT_EXPIRE_CENTISECS    1000
 
-#define LINUX_DIRTY_WRITEBACK_CENTISECS "/proc/sys/vm/dirty_writeback_centisecs"
+#define DIRTY_WRITEBACK_CENTISECS_PATH "/proc/sys/vm/dirty_writeback_centisecs"
 
-#define DEFAULT_WRITEBACK_CENTISECS 250
-
-#define LINUX
+#define DEFAULT_WRITEBACK_CENTISECS    250
 
 extern long int expire_centisecs;
 
