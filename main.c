@@ -147,21 +147,21 @@ int main(int argument_count, char *argument_values[])
     
     bool _daemon_opt = false;
 
+#ifdef PROGRAM_ACCEPTS_SYSTEMD
+
+    bool _systemd_opt = false;
+
+#endif
+
     while ((_opt = getopt_long(argument_count, argument_values, "DhSV", _long_opts, NULL)) != -1)
         switch (_opt)
         {
 
-            case 'D':
-                _daemon_opt = true;
-                break;
+            case 'D': _daemon_opt = true; break;
 
 #ifdef PROGRAM_ACCEPTS_SYSTEMD
 
-            case 'S':
-
-
-                
-                break;
+            case 'S': _systemd_opt = true; break;
 
 #endif
 
@@ -181,31 +181,70 @@ int main(int argument_count, char *argument_values[])
 
         }
 
-    if (_daemon_opt)
+
+#ifdef PROGRAM_ACCEPTS_SYSTEMD
+
+    if (!_systemd_opt)
+
+#endif
     {
-        
-        if (daemon(0, 0) == -1)
+
+        if (_daemon_opt)
         {
-        
-            perror("Failed to daemonize program");
+            
+            if (daemon(0, 0) == -1)
+            {
+            
+                perror("Failed to daemonize program");
+            
+                exit(EXIT_FAILURE);
+            
+            }
+
+            fclose(stdin);
+
+            fclose(stdout);
+
+            fclose(stderr);
+
+            openlog(PROGRAM_NAME, LOG_PID, LOG_DAEMON);
+
+            setlogmask(LOG_UPTO(LOG_INFO));
+
+            syslog(LOG_INFO, "Starting as a daemon.");
+
+        }
+
+    }
+
+#ifdef PROGRAM_ACCEPTS_SYSTEMD
+
+    else
+    {
+
+        if (sd_booted() <= 0)
+        {
+            
+            fprintf(stderr, "Program must be started by systemd.\n");
         
             exit(EXIT_FAILURE);
         
         }
 
-        fclose(stdin);
+        if (sd_notify(0, "READY=1") < 0)
+        {
 
-        fclose(stdout);
+            perror("Failed to notify systemd: ");
+        
+            exit(EXIT_FAILURE);
+        
+        }
 
-        fclose(stderr);
-
-        openlog(PROGRAM_NAME, LOG_PID, LOG_DAEMON);
-
-        setlogmask(LOG_UPTO(LOG_INFO));
-
-        syslog(LOG_INFO, "Starting as a demon.");
+        sd_journal_print(LOG_INFO, "Successfully started!");
 
     }
+
+#endif
 
     if (start_ctl_listener() != 0)
     {
@@ -310,6 +349,8 @@ int main(int argument_count, char *argument_values[])
         usleep(100000);
 
     }
+
+    if (_systemd_opt) sd_notify(0, "STOPPING=1");
 
 _exit_program:
 

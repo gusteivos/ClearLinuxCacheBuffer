@@ -5,6 +5,13 @@
 #include <cache_buffer.h>
 #include <ctl_listener.h>
 
+#ifdef PROGRAM_ACCEPTS_SYSTEMD
+
+#include <systemd/sd-daemon.h>
+#include <systemd/sd-journal.h>
+
+#endif
+
 #define DIRTY_EXPIRE_CENTISECS_PATH "/proc/sys/vm/dirty_expire_centisecs"
 
 #define DEFAULT_EXPIRE_CENTISECS    1000

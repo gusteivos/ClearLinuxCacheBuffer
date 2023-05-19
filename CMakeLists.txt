@@ -16,10 +16,21 @@ set(executable_header_files
     include/
 )
 
+get_directory_property(DefinitionsForTheCode DIRECTORY ${CMAKE_SOURCE_DIR} COMPILE_DEFINITIONS)
+
 add_executable(${CMAKE_PROJECT_NAME} ${executable_source_files})
 
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME "CLCB")
 
 target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC ${executable_header_files})
+
+foreach(definition ${DefinitionsForTheCode})
+    if (${definition} STREQUAL "PROGRAM_ACCEPTS_SYSTEMD")
+        target_link_libraries(${CMAKE_PROJECT_NAME} systemd)
+    endif()
+    message(STATUS "Found Define: ${definition}")
+endforeach()
+
+message(STATUS "DefinitionsForTheCode: " ${DefinitionsForTheCode})
 
 configure_file(${CMAKE_CURRENT_LIST_DIR}/include/program_information.h.in ${CMAKE_CURRENT_SOURCE_DIR}/include/program_information.h @ONLY)
