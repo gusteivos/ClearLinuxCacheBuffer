@@ -102,30 +102,9 @@ int set_writeback_centisecs_on_file_perror()
 
 }
 
-void print_address_and_port(struct sockaddr_in address)
-{
-
-    char ip[INET_ADDRSTRLEN];
-
-    inet_ntop(AF_INET, &(address.sin_addr), ip, INET_ADDRSTRLEN);
-    
-    printf("IP: %s\n", ip);
-    
-    printf("Porta: %d\n", ntohs(address.sin_port));
-
-}
-
 int main(int argument_count, char *argument_values[])
 {
 
-    //Temp:
-
-        char *str = "127.0.0.1";
-
-        strcpy(listen_ip, str);
-
-        listen_port = DEFAULT_LISTEN_PORT;
-  
     static const struct option _long_opts[] =
     {
 
@@ -246,23 +225,6 @@ int main(int argument_count, char *argument_values[])
 
 #endif
 
-    if (start_ctl_listener() != 0)
-    {
-
-        perror("Error on start_ctl_listener");
-
-        goto _direct_exit_program;
-
-    }
-    else
-    {
-
-        printf("Listening to ctl in:\n");
-
-        print_address_and_port(listen_address);
-
-    }
-
     if (set_expire_centisecs_on_file_perror() == 0)
     {
 
@@ -327,25 +289,6 @@ int main(int argument_count, char *argument_values[])
 
         }
 
-        char received_ctl_data[1024];
-
-        int size_of_received_ctl_data = 0;
-
-        int _successful_reading = read_ctl_listener(received_ctl_data, &size_of_received_ctl_data);
-
-        if (_successful_reading == 0)
-        {
-
-            //todo
-
-        }
-        else
-        {
-
-            //todo
-
-        }
-
         usleep(100000);
 
     }
@@ -353,8 +296,6 @@ int main(int argument_count, char *argument_values[])
     if (_systemd_opt) sd_notify(0, "STOPPING=1");
 
 _exit_program:
-
-    close_ctl_listener();
 
 _direct_exit_program:
 
