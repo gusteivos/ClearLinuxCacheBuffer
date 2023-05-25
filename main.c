@@ -1,21 +1,115 @@
 #include <main.h>
 
-bool can_clean = true;
+long int dirty_expire_centisecs_value    = DEFAULT_DIRTY_EXPIRE_CENTISECS_VALUE;
 
-long int expire_centisecs    = DEFAULT_EXPIRE_CENTISECS;
+long int dirty_writeback_centisecs_value = DEFAULT_DIRTY_WRITEBACK_CENTISECS_VALUE;
 
-long int writeback_centisecs = DEFAULT_WRITEBACK_CENTISECS;
+long int maximum_accepted_buffer = 256;
 
-long int maximum_accepted_cache = 256;
+long int maximum_accepted_cache  = 512;
 
-long int maximum_accepted_buffer = 64;
+static unsigned char for_print_output = 0; /* 0 - printf, 1 - syslog, 2 - sd_journal_print */
 
-int set_expire_centisecs_on_file()
+static bool keep_running = true;
+
+bool daemon_option = false;
+
+#ifdef PROGRAM_ACCEPTS_SYSTEMD
+
+bool systemd_option = false;
+
+#endif
+
+static void print_message(const char* format, ...)
+{
+
+    char buffer[2024];
+    va_list args;
+    va_start(args, format);
+
+    vsnprintf(buffer, sizeof(buffer), format, args);
+
+    va_end(args);
+
+    switch (for_print_output)
+    {
+
+        case 0: printf("%s", buffer); break;
+
+        case 1: syslog(LOG_INFO, "%s", buffer); break;
+
+#ifdef PROGRAM_ACCEPTS_SYSTEMD        
+        case 2: sd_journal_print(LOG_INFO, "%s", buffer); break;
+#endif
+
+        default: printf("%s", buffer); break;
+
+    }
+
+}
+
+static void __attribute__ ((__noreturn__)) print_usage(FILE * out)
+{
+
+    fprintf(out, "Usage: %s [options]\n", PROGRAM_NAME);
+
+    fprintf(out, "Options:\n");
+
+    fprintf(out, "  -D, --daemon              Run the program as a daemon\n");
+
+    fprintf(out, "  -h, --help                Display this help message\n"  );
+
+    fprintf(out, "  -S, --systemd             Enable systemd integration\n" );
+
+    fprintf(out, "  -V, --version             Display version information\n");
+
+    exit(out == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
+
+}
+
+void signal_handler(int signal_number)
+{
+
+    switch(signal_number)
+    {
+
+        case SIGINT:
+            
+            print_message("SIGINT received.");
+
+            keep_running = false;
+            
+            break;
+
+        case SIGTERM:
+            print_message("SIGTERM received.");
+
+            keep_running = false;
+            
+#ifdef PROGRAM_ACCEPTS_SYSTEMD
+            if (!systemd_option)
+            {
+#endif
+
+                if (daemon_option) closelog();
+
+#ifdef PROGRAM_ACCEPTS_SYSTEMD
+            }
+            else sd_notify(0, "STOPPING=1");
+#endif
+
+            break;
+
+    } 
+
+}
+
+int set_dirty_expire_centisecs_on_file()
 {
     
     int _output_value = 0;
 
-    FILE *_dirty_expire_centisecs_file = fopen(DIRTY_EXPIRE_CENTISECS_PATH, "w");
+    FILE *_dirty_expire_centisecs_file = fopen(DIRTY_EXPIRE_CENTISECS_FILE_PATH, "w");
     
     if (_dirty_expire_centisecs_file == NULL)
     {
@@ -26,7 +120,7 @@ int set_expire_centisecs_on_file()
 
     }
 
-    fprintf(_dirty_expire_centisecs_file, "%ld", expire_centisecs);
+    fprintf(_dirty_expire_centisecs_file, "%ld", dirty_expire_centisecs_value);
 
     fclose(_dirty_expire_centisecs_file);
 
@@ -36,32 +130,12 @@ _end_of_function:
 
 }
 
-int set_expire_centisecs_on_file_perror()
-{
-
-    int _output_value = set_expire_centisecs_on_file();
-
-    if (_output_value != 0)
-    {
-
-        char __error_string[1024];
-
-        sprintf(__error_string, "Error setting expire_centisecs in file: %s", DIRTY_EXPIRE_CENTISECS_PATH);
-
-        perror(__error_string);
-    
-    }
-
-    return _output_value;
-
-}
-
-int set_writeback_centisecs_on_file()
+int set_dirty_writeback_centisecs_on_file()
 {
     
     int _output_value = 0;
 
-    FILE *_dirty_writeback_centisecs_file = fopen(DIRTY_WRITEBACK_CENTISECS_PATH, "w");
+    FILE *_dirty_writeback_centisecs_file = fopen(DIRTY_WRITEBACK_CENTISECS_FILE_PATH, "w");
     
     if (_dirty_writeback_centisecs_file == NULL)
     {
@@ -72,7 +146,7 @@ int set_writeback_centisecs_on_file()
 
     }
 
-    fprintf(_dirty_writeback_centisecs_file, "%ld", writeback_centisecs);
+    fprintf(_dirty_writeback_centisecs_file, "%ld", dirty_writeback_centisecs_value);
 
     fclose(_dirty_writeback_centisecs_file);
 
@@ -82,99 +156,55 @@ _end_of_function:
 
 }
 
-int set_writeback_centisecs_on_file_perror()
+int main(int argument_count, char **argument_values)
 {
 
-    int _output_value = set_writeback_centisecs_on_file();
+    int option;
 
-    if (_output_value != 0)
-    {
-
-        char __error_string[1024];
-
-        sprintf(__error_string, "Error setting writeback_centisecs in file: %s", DIRTY_WRITEBACK_CENTISECS_PATH);
-
-        perror(__error_string);
-    
-    }
-
-    return _output_value;
-
-}
-
-int main(int argument_count, char *argument_values[])
-{
-
-    static const struct option _long_opts[] =
+    static const struct option longopts[] =
     {
 
 		{ "daemon",	no_argument, NULL, 'D'},
 		{   "help",	no_argument, NULL, 'h'},
-
 #ifdef PROGRAM_ACCEPTS_SYSTEMD
-
         {"systemd", no_argument, NULL, 'S'},
-
 #endif
-
         {"version",	no_argument, NULL, 'V'},
 		{NULL, 0, NULL, 0}
 	
     };
-
-    int _opt;
-    
-    bool _daemon_opt = false;
-
-#ifdef PROGRAM_ACCEPTS_SYSTEMD
-
-    bool _systemd_opt = false;
-
-#endif
-
-    while ((_opt = getopt_long(argument_count, argument_values, "DhSV", _long_opts, NULL)) != -1)
-        switch (_opt)
+  
+    while ((option = getopt_long(argument_count, argument_values, "DhSV", longopts, NULL)) != -1)
+        switch (option)
         {
-
-            case 'D': _daemon_opt = true; break;
-
+            case 'D': daemon_option = true;  break;
 #ifdef PROGRAM_ACCEPTS_SYSTEMD
-
-            case 'S': _systemd_opt = true; break;
-
+            case 'S': systemd_option = true; break;
 #endif
-
-            case 'h':
-                printf("To Do: Create the Help Option");
+            case 'h': print_usage(stdout);
             case 'V':
-                printf("%s version: %s", PROGRAM_NAME, PROGRAM_VERSION);
-                goto _direct_exit_program;
-
+                printf("%s version: %s\n", PROGRAM_NAME, PROGRAM_VERSION);
+                return 0;
             case '?':
-                printf("Unknown option ignoring...");
-                break;
-
+                printf("Invalid option and or argument.\n");
+                print_usage(stderr);
             default:
-                printf("Unexpected result from getopt_long(): %d\n", _opt);
                 break;
-
+        
         }
 
-
 #ifdef PROGRAM_ACCEPTS_SYSTEMD
-
-    if (!_systemd_opt)
-
-#endif
+    if (!systemd_option)
     {
+#endif
 
-        if (_daemon_opt)
-        {
-            
+        if (daemon_option)
+        {   
+
             if (daemon(0, 0) == -1)
             {
-            
-                perror("Failed to daemonize program");
+                
+                fprintf(stderr, "Failed to daemonize program; errno: %d\n", errno);
             
                 exit(EXIT_FAILURE);
             
@@ -192,112 +222,111 @@ int main(int argument_count, char *argument_values[])
 
             syslog(LOG_INFO, "Starting as a daemon.");
 
-        }
+            for_print_output = 1; /*To syslog.*/
 
-    }
+        }
 
 #ifdef PROGRAM_ACCEPTS_SYSTEMD
-
+    }
     else
     {
 
-        if (sd_booted() <= 0)
+        if (sd_booted() <= 0 || sd_notify(0, "READY=1") < 0)
         {
             
-            fprintf(stderr, "Program must be started by systemd.\n");
+            fprintf(stderr, "Program was not started by systemd or could not notify; errno: %d\n", errno);
         
             exit(EXIT_FAILURE);
-        
+
         }
 
-        if (sd_notify(0, "READY=1") < 0)
-        {
+        sd_journal_print(LOG_INFO, "Starting");
 
-            perror("Failed to notify systemd: ");
-        
-            exit(EXIT_FAILURE);
-        
-        }
-
-        sd_journal_print(LOG_INFO, "Successfully started!");
+        for_print_output = 2; /*To sd_journal_print.*/
 
     }
-
 #endif
 
-    if (set_expire_centisecs_on_file_perror() == 0)
-    {
 
-        //Todo: 
 
-    }
-    else
-    {
+    int q = set_dirty_expire_centisecs_on_file();
 
-        //Todo: 
+    if (q != 0)
+    {   
+
+        print_message("Error when setting dirty_expire_centisecs (%s) with value: %d; errno: %d\n", DIRTY_EXPIRE_CENTISECS_FILE_PATH, dirty_expire_centisecs_value, errno);
 
     }
 
-    if (set_writeback_centisecs_on_file_perror() == 0)
-    {
+    q = set_dirty_writeback_centisecs_on_file();
 
-        //Todo: 
+    if (q != 0)
+    {   
 
-    }
-    else
-    {
-
-        //Todo: 
+        print_message("Error when setting dirty_writeback_centisecs (%s) with value: %d; errno: %d\n", DIRTY_EXPIRE_CENTISECS_FILE_PATH, dirty_expire_centisecs_value, errno);
 
     }
     
-    while (can_clean)
+
+
+    signal(SIGINT , signal_handler);
+
+    signal(SIGTERM, signal_handler); 
+
+    smi_meninfo_t meninfo;
+
+    while (keep_running)
     {
 
-        int level_of_possible_cleanliness = 0;
+        int output_of_meninfo_reading = smi_get_infos(&meninfo);
 
-        long int __current_buffer_usage = 0;
-
-        get_buffer_usage(&__current_buffer_usage);
-
-        __current_buffer_usage /= 1024;
-
-        if (__current_buffer_usage > maximum_accepted_buffer) level_of_possible_cleanliness += 1;
-
-        long int __current_cache_usage = 0;
-
-        get_cache_usage(&__current_cache_usage);
-
-        __current_cache_usage /= 1024;
-
-        if (__current_cache_usage > maximum_accepted_cache) level_of_possible_cleanliness += 2;
-
-        if (level_of_possible_cleanliness > 0)
+        if (output_of_meninfo_reading == 0)
         {
 
-            char *cmd_str = "sync; echo %d > /proc/sys/vm/drop_caches";
+            int level_of_possible_cleanliness = 0;
 
-            char cmd_str_form[1024];
+            if (maximum_accepted_buffer > meninfo.buffers) level_of_possible_cleanliness += 1;
 
-            sprintf(cmd_str_form, cmd_str, level_of_possible_cleanliness);
+            if (maximum_accepted_cache  > meninfo.cached)  level_of_possible_cleanliness += 2;
+            
+            if (level_of_possible_cleanliness > 0)
+            {
 
-            system(cmd_str_form);
+                char *command_format_string = "sync; echo %d > /proc/sys/vm/drop_caches";
 
-            printf("Clean memory using level: %d\n", level_of_possible_cleanliness);
+                char command_string[48];
 
-            sleep(1);
+                sprintf(command_string, command_format_string, level_of_possible_cleanliness);
 
+                system(command_string);
+
+                print_message("Clean memory using level: %d\n", level_of_possible_cleanliness);
+
+                sleep(1);
+
+            }
+            
         }
+        else
+            print_message("Error reading meminfo file: %s, errno: %d", SMI_MEMINFO_FILE_PATH, output_of_meninfo_reading);
+
+        if (for_print_output == 0) fflush(stdout); /*This prevents errors from the terminal not being updated.*/
 
         usleep(100000);
 
     }
 
-    if (_systemd_opt) sd_notify(0, "STOPPING=1");
+#ifdef PROGRAM_ACCEPTS_SYSTEMD
+    if (!systemd_option)
+    {
+#endif
 
-_exit_program:
+        if (daemon_option) closelog();
 
-_direct_exit_program:
+#ifdef PROGRAM_ACCEPTS_SYSTEMD
+    }
+    else sd_notify(0, "STOPPING=1");
+#endif
 
     return 0;
 
