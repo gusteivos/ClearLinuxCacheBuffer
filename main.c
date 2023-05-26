@@ -20,29 +20,47 @@ bool systemd_option = false;
 
 #endif
 
+static void on_program_exit(void)
+{
+
+#ifdef PROGRAM_ACCEPTS_SYSTEMD
+    if (systemd_option)
+        sd_notify(0, "STOPPING=1");
+    else 
+#endif
+    {
+
+        if (daemon_option) closelog();
+
+    }
+
+}
+
 static void print_message(const char* format, ...)
 {
 
-    char buffer[2024];
+    char formatted_string[(strlen(format) + 1) * 2];
+
     va_list args;
+    
     va_start(args, format);
 
-    vsnprintf(buffer, sizeof(buffer), format, args);
+    vsnprintf(formatted_string, sizeof(formatted_string), format, args);
 
     va_end(args);
 
     switch (for_print_output)
     {
 
-        case 0: printf("%s", buffer); break;
+        case 0: printf (formatted_string);                    break;
 
-        case 1: syslog(LOG_INFO, "%s", buffer); break;
+        case 1: syslog          (LOG_INFO, formatted_string); break;
 
 #ifdef PROGRAM_ACCEPTS_SYSTEMD        
-        case 2: sd_journal_print(LOG_INFO, "%s", buffer); break;
+        case 2: sd_journal_print(LOG_INFO, formatted_string); break;
 #endif
 
-        default: printf("%s", buffer); break;
+        default: printf(formatted_string);                    break;
 
     }
 
@@ -67,7 +85,7 @@ static void __attribute__ ((__noreturn__)) print_usage(FILE * out)
 
 }
 
-void signal_handler(int signal_number)
+static void signal_handler(int signal_number)
 {
 
     switch(signal_number)
@@ -82,23 +100,12 @@ void signal_handler(int signal_number)
             break;
 
         case SIGTERM:
+
             print_message("SIGTERM received.");
 
-            keep_running = false;
-            
-#ifdef PROGRAM_ACCEPTS_SYSTEMD
-            if (!systemd_option)
-            {
-#endif
+            on_program_exit();
 
-                if (daemon_option) closelog();
-
-#ifdef PROGRAM_ACCEPTS_SYSTEMD
-            }
-            else sd_notify(0, "STOPPING=1");
-#endif
-
-            break;
+            exit(0);
 
     } 
 
@@ -165,38 +172,64 @@ int main(int argument_count, char **argument_values)
     {
 
 		{ "daemon",	no_argument, NULL, 'D'},
+
 		{   "help",	no_argument, NULL, 'h'},
+
 #ifdef PROGRAM_ACCEPTS_SYSTEMD
         {"systemd", no_argument, NULL, 'S'},
 #endif
+
         {"version",	no_argument, NULL, 'V'},
-		{NULL, 0, NULL, 0}
+		
+        {NULL, 0, NULL, 0}
 	
     };
   
     while ((option = getopt_long(argument_count, argument_values, "DhSV", longopts, NULL)) != -1)
         switch (option)
         {
+            
             case 'D': daemon_option = true;  break;
+
 #ifdef PROGRAM_ACCEPTS_SYSTEMD
             case 'S': systemd_option = true; break;
 #endif
+
             case 'h': print_usage(stdout);
+      
             case 'V':
                 printf("%s version: %s\n", PROGRAM_NAME, PROGRAM_VERSION);
-                return 0;
+                exit(0);
+
             case '?':
                 printf("Invalid option and or argument.\n");
                 print_usage(stderr);
-            default:
-                break;
-        
+
+            default: print_usage(stderr);
+
         }
 
 #ifdef PROGRAM_ACCEPTS_SYSTEMD
-    if (!systemd_option)
+    if (systemd_option)
     {
+
+        if (sd_booted() <= 0 || sd_notify(0, "READY=1") < 0)
+        {
+            
+            fprintf(stderr, "Program was not started by systemd or could not notify; errno: %d\n", errno);
+        
+            exit(EXIT_FAILURE);
+
+        }
+
+        sd_journal_print(LOG_INFO, "Starting as a systemd daemon.");
+
+        for_print_output = 2; /*To sd_journal_print.*/
+
+    }
+    else
 #endif
+    {
 
         if (daemon_option)
         {   
@@ -226,26 +259,7 @@ int main(int argument_count, char **argument_values)
 
         }
 
-#ifdef PROGRAM_ACCEPTS_SYSTEMD
     }
-    else
-    {
-
-        if (sd_booted() <= 0 || sd_notify(0, "READY=1") < 0)
-        {
-            
-            fprintf(stderr, "Program was not started by systemd or could not notify; errno: %d\n", errno);
-        
-            exit(EXIT_FAILURE);
-
-        }
-
-        sd_journal_print(LOG_INFO, "Starting");
-
-        for_print_output = 2; /*To sd_journal_print.*/
-
-    }
-#endif
 
 
 
@@ -266,17 +280,17 @@ int main(int argument_count, char **argument_values)
         print_message("Error when setting dirty_writeback_centisecs (%s) with value: %d; errno: %d\n", DIRTY_EXPIRE_CENTISECS_FILE_PATH, dirty_expire_centisecs_value, errno);
 
     }
-    
+
 
 
     signal(SIGINT , signal_handler);
 
-    signal(SIGTERM, signal_handler); 
-
-    smi_meninfo_t meninfo;
+    signal(SIGTERM, signal_handler);
 
     while (keep_running)
     {
+
+        smi_meninfo_t meninfo;
 
         int output_of_meninfo_reading = smi_get_infos(&meninfo);
 
@@ -285,9 +299,9 @@ int main(int argument_count, char **argument_values)
 
             int level_of_possible_cleanliness = 0;
 
-            if (maximum_accepted_buffer > meninfo.buffers) level_of_possible_cleanliness += 1;
+            if (meninfo.buffers > maximum_accepted_buffer) level_of_possible_cleanliness += 1;
 
-            if (maximum_accepted_cache  > meninfo.cached)  level_of_possible_cleanliness += 2;
+            if (meninfo.cached  > maximum_accepted_cache)  level_of_possible_cleanliness += 2;
             
             if (level_of_possible_cleanliness > 0)
             {
@@ -316,17 +330,7 @@ int main(int argument_count, char **argument_values)
 
     }
 
-#ifdef PROGRAM_ACCEPTS_SYSTEMD
-    if (!systemd_option)
-    {
-#endif
-
-        if (daemon_option) closelog();
-
-#ifdef PROGRAM_ACCEPTS_SYSTEMD
-    }
-    else sd_notify(0, "STOPPING=1");
-#endif
+    on_program_exit();
 
     return 0;
 
