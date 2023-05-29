@@ -1,4 +1,4 @@
-## ClearLinuxCacheBuffer ![GitHub release (latest by date)](https://img.shields.io/github/v/release/gusteivos/ClearLinuxCacheBuffer?style=flat-square)
+## ClearLinuxCacheBuffer [![GitHub release (latest by date)](https://img.shields.io/github/v/release/gusteivos/ClearLinuxCacheBuffer?style=flat-square)](https://github.com/gusteivos/ClearLinuxCacheBuffer/tags)
 
 This software is designed to periodically clear the linux system cache and buffer.  
 The purpose of this software is to be as simple as possible and open source.  
